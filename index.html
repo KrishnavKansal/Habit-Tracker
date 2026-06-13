@@ -293,7 +293,26 @@ async function doLogout() {
   habits = []; checks = {};
   showScreen('login');
 }
+ 
+// Safety timeout: if auth hasn't resolved in 5s, force logout
+const authTimeout = setTimeout(async () => {
+  await sb.auth.signOut();
+  showScreen('login');
+}, 5000);
 
+sb.auth.onAuthStateChange(async (event, session) => {
+  clearTimeout(authTimeout);
+  if (session?.user) {
+    currentUser = session.user;
+    document.getElementById('user-email-label').textContent = currentUser.email;
+    showScreen('app');
+    await loadAll();
+  } else {
+    currentUser = null;
+    await sb.auth.signOut(); // Clear any stale tokens
+    showScreen('login');
+  }
+ 
 // ── Boot: listen for auth changes ───────────────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) {
