@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Habit Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  /* ===== Configure colors / theme here ===== */
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel-2:#1f242e; --border:#2a303c;
+    --text:#e8eaed; --muted:#9aa3b2; --accent:#6366f1; --accent-2:#22c55e;
+    --danger:#ef4444; --today:#3b3f52;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.4; -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit; cursor:pointer}
+  .hidden{display:none !important}
+
+  /* ===== Login ===== */
+  .login-wrap{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px}
+  .login-card{background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:28px; width:100%; max-width:360px}
+  .login-card h1{margin:0 0 4px; font-size:22px}
+  .login-card p{margin:0 0 20px; color:var(--muted); font-size:14px}
+  .field{margin-bottom:14px}
+  .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px}
+  .field input{
+    width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--text); font-size:15px;
+  }
+  .field input:focus{outline:none; border-color:var(--accent)}
+  .btn{
+    border:none; border-radius:10px; padding:11px 14px; font-size:15px; font-weight:600;
+    background:var(--accent); color:#fff; width:100%;
+  }
+  .btn:disabled{opacity:.6; cursor:default}
+  .btn-ghost{background:transparent; border:1px solid var(--border); color:var(--text)}
+  .btn-sm{padding:6px 10px; font-size:13px; width:auto; font-weight:500}
+  .error{color:var(--danger); font-size:13px; margin-top:10px; min-height:16px}
+
+  /* ===== App shell ===== */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:14px 18px; border-bottom:1px solid var(--border); position:sticky; top:0;
+    background:var(--bg); z-index:5; flex-wrap:wrap;
+  }
+  .topbar .brand{font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px}
+  .topbar .who{color:var(--muted); font-size:13px}
+  .month-nav{display:flex; align-items:center; gap:8px}
+  .month-nav .label{min-width:150px; text-align:center; font-weight:600}
+  .month-nav button{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; width:34px; height:34px; font-size:16px;
+  }
+  .container{padding:18px; max-width:100%}
+
+  /* ===== Add habit row ===== */
+  .add-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px}
+  .add-row input[type=text]{
+    flex:1 1 200px; min-width:160px; padding:10px 12px; border-radius:10px;
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text); font-size:14px;
+  }
+  .swatches{display:flex; gap:6px; flex-wrap:wrap}
+  .swatch{width:26px; height:26px; border-radius:50%; border:2px solid transparent}
+  .swatch.sel{border-color:#fff}
+
+  /* ===== Grid ===== */
+  .grid-scroll{overflow-x:auto; border:1px solid var(--border); border-radius:12px}
+  table.grid{border-collapse:collapse; width:100%; min-width:640px}
+  table.grid th, table.grid td{border-bottom:1px solid var(--border); border-right:1px solid var(--border)}
+  table.grid th{background:var(--panel); font-weight:600; font-size:12px; color:var(--muted); padding:8px 6px}
+  table.grid th.day{width:30px; text-align:center}
+  table.grid th.day.today, table.grid td.cell.today{background:var(--today)}
+  table.grid th.dow{font-size:10px}
+  .habit-th{position:sticky; left:0; z-index:3; background:var(--panel); text-align:left; min-width:200px; padding:10px 12px}
+  td.habit-cell{position:sticky; left:0; z-index:2; background:var(--panel-2); padding:8px 12px; min-width:200px}
+  .habit-head{display:flex; align-items:center; gap:8px; justify-content:space-between}
+  .habit-name{display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; overflow:hidden}
+  .dot{width:12px; height:12px; border-radius:50%; flex:none}
+  .habit-actions{display:flex; gap:4px; flex:none}
+  .icon-btn{
+    background:transparent; border:1px solid var(--border); color:var(--muted);
+    border-radius:6px; width:26px; height:26px; font-size:12px; line-height:1;
+  }
+  .icon-btn:hover{color:var(--text)}
+  .summary{font-size:11px; color:var(--muted); margin-top:4px}
+  .summary .streak{color:var(--accent-2); font-weight:600}
+  td.cell{width:30px; height:34px; text-align:center; cursor:pointer; user-select:none}
+  td.cell .mark{
+    width:20px; height:20px; border-radius:6px; margin:0 auto; border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff;
+  }
+  td.cell.done .mark{border-color:transparent}
+  .empty{padding:40px; text-align:center; color:var(--muted)}
+  @media (max-width:560px){
+    .habit-th, td.habit-cell{min-width:150px}
+    .month-nav .label{min-width:120px; font-size:14px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="login" class="login-wrap">
+  <form id="loginForm" class="login-card">
+    <h1>Habit Tracker</h1>
+    <p>Sign in to continue</p>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" required />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required />
+    </div>
+    <button id="loginBtn" class="btn" type="submit">Sign in</button>
+    <div id="loginError" class="error"></div>
+  </form>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="brand">✅ Habit Tracker</div>
+    <div class="month-nav">
+      <button id="prevMonth" title="Previous month">‹</button>
+      <div id="monthLabel" class="label"></div>
+      <button id="nextMonth" title="Next month">›</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span id="who" class="who"></span>
+      <button id="logoutBtn" class="btn btn-ghost btn-sm">Log out</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <form id="addForm" class="add-row">
+      <input id="habitName" type="text" placeholder="New habit name…" maxlength="80" />
+      <div id="swatches" class="swatches"></div>
+      <button class="btn btn-sm" type="submit">+ Add habit</button>
+    </form>
+
+    <div class="grid-scroll">
+      <table class="grid" id="grid"></table>
+    </div>
+    <div id="emptyState" class="empty hidden">No habits yet — add your first one above 👆</div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — paste your Supabase project URL and anon key here
+   ============================================================ */
+const SUPABASE_URL = "https://bukvfbqzfyawrzdxwaso.supabase.co";        // e.g. https://abcdefgh.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1a3ZmYnF6Znlhd3J6ZHh3YXNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU5NTQsImV4cCI6MjA5Njg5MTk1NH0.g8H7czF4g9-8qfTxWvCF9VYdWnMsd8Sg84FTsf7xSlE";
+
+/* Palette offered when creating a habit */
+const COLORS = ["#6366f1","#22c55e","#ef4444","#f59e0b","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
+
+/* ============================================================
+   State
+   ============================================================ */
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true }
+});
+let user = null;
+let habits = [];
+let logs = [];                 // habit_logs for the visible month
+let selectedColor = COLORS[0];
+let view = new Date();         // any date in the month being viewed
+view.setDate(1);
+
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`; // m is 0-based
+
+/* ============================================================
+   Auth
+   ============================================================ */
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (session && session.user) { user = session.user; await showApp(); }
+  else showLogin();
+
+  sb.auth.onAuthStateChange((_event, session) => {
+    if (session && session.user) { user = session.user; showApp(); }
+    else { user = null; showLogin(); }
+  });
+}
+
+function showLogin(){
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+}
+
+async function showApp(){
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  $("who").textContent = user.email || "";
+  await loadAll();
+}
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("loginBtn");
+  $("loginError").textContent = "";
+  btn.disabled = true; btn.textContent = "Signing in…";
+  const { error } = await sb.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+  btn.disabled = false; btn.textContent = "Sign in";
+  if (error) $("loginError").textContent = error.message;
+});
+
+$("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); });
+
+/* ============================================================
+   Data loading
+   ============================================================ */
+async function loadAll(){
+  await Promise.all([loadHabits(), loadLogs()]);
+  render();
+}
+
+async function loadHabits(){
+  const { data, error } = await sb.from("habits").select("*")
+    .order("order_index", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) { console.error(error); alert(error.message); return; }
+  habits = data || [];
+}
+
+async function loadLogs(){
+  const y = view.getFullYear(), m = view.getMonth();
+  const days = new Date(y, m + 1, 0).getDate();
+  const start = iso(y, m, 1), end = iso(y, m, days);
+  const { data, error } = await sb.from("habit_logs").select("*")
+    .gte("date", start).lte("date", end);
+  if (error) { console.error(error); return; }
+  logs = data || [];
+}
+
+/* ============================================================
+   Mutations
+   ============================================================ */
+async function addHabit(name){
+  const order = habits.length ? Math.max(...habits.map(h => h.order_index || 0)) + 1 : 0;
+  const { data, error } = await sb.from("habits")
+    .insert({ user_id: user.id, name, color: selectedColor, order_index: order })
+    .select().single();
+  if (error) { alert(error.message); return; }
+  habits.push(data); render();
+}
+
+async function editHabit(h){
+  const name = prompt("Habit name", h.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const { error } = await sb.from("habits").update({ name: trimmed }).eq("id", h.id);
+  if (error) { alert(error.message); return; }
+  h.name = trimmed; render();
+}
+
+async function deleteHabit(h){
+  if (!confirm(`Delete \"${h.name}\" and all its history?`)) return;
+  const { error } = await sb.from("habits").delete().eq("id", h.id);
+  if (error) { alert(error.message); return; }
+  habits = habits.filter(x => x.id !== h.id);
+  logs = logs.filter(l => l.habit_id !== h.id);
+  render();
+}
+
+async function moveHabit(index, dir){
+  const j = index + dir;
+  if (j < 0 || j >= habits.length) return;
+  const a = habits[index], b = habits[j];
+  const ao = a.order_index, bo = b.order_index;
+  // swap locally
+  habits[index] = b; habits[j] = a;
+  a.order_index = bo; b.order_index = ao;
+  render();
+  const [r1, r2] = await Promise.all([
+    sb.from("habits").update({ order_index: a.order_index }).eq("id", a.id),
+    sb.from("habits").update({ order_index: b.order_index }).eq("id", b.id)
+  ]);
+  if (r1.error || r2.error) { await loadHabits(); render(); }
+}
+
+async function toggleLog(habitId, dateStr){
+  const existing = logs.find(l => l.habit_id === habitId && l.date === dateStr);
+  if (existing){
+    logs = logs.filter(l => l.id !== existing.id);
+    render();
+    const { error } = await sb.from("habit_logs").delete().eq("id", existing.id);
+    if (error) { await loadLogs(); render(); }
+  } else {
+    const temp = { id: "tmp-" + Math.random(), habit_id: habitId, user_id: user.id, date: dateStr };
+    logs.push(temp); render();
+    const { data, error } = await sb.from("habit_logs")
+      .insert({ habit_id: habitId, user_id: user.id, date: dateStr })
+      .select().single();
+    if (error) { logs = logs.filter(l => l.id !== temp.id); render(); }
+    else { temp.id = data.id; }
+  }
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function longestStreak(habitId, days, y, m){
+  let best = 0, cur = 0;
+  for (let d = 1; d <= days; d++){
+    const has = logs.some(l => l.habit_id === habitId && l.date === iso(y, m, d));
+    cur = has ? cur + 1 : 0;
+    if (cur > best) best = cur;
+  }
+  return best;
+}
+
+function render(){
+  const y = view.getFullYear(), m = view.getMonth();
+  const days = new Date(y, m + 1, 0).getDate();
+  const monthName = view.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  $("monthLabel").textContent = monthName;
+
+  const now = new Date();
+  const isCurrentMonth = now.getFullYear() === y && now.getMonth() === m;
+  const todayD = now.getDate();
+  const dow = ["S","M","T","W","T","F","S"];
+
+  const grid = $("grid");
+  grid.innerHTML = "";
+
+  if (!habits.length){
+    $("emptyState").classList.remove("hidden");
+    $("grid").parentElement.classList.add("hidden");
+    return;
+  }
+  $("emptyState").classList.add("hidden");
+  $("grid").parentElement.classList.remove("hidden");
+
+  // ----- Header rows -----
+  const thead = document.createElement("thead");
+  const r1 = document.createElement("tr");
+  r1.innerHTML = `<th class="habit-th">Habit</th>`;
+  for (let d = 1; d <= days; d++){
+    const today = isCurrentMonth && d === todayD;
+    r1.innerHTML += `<th class="day${today ? " today" : ""}">${d}</th>`;
+  }
+  thead.appendChild(r1);
+
+  const r2 = document.createElement("tr");
+  r2.innerHTML = `<th class="habit-th"></th>`;
+  for (let d = 1; d <= days; d++){
+    const wd = new Date(y, m, d).getDay();
+    const today = isCurrentMonth && d === todayD;
+    r2.innerHTML += `<th class="day dow${today ? " today" : ""}">${dow[wd]}</th>`;
+  }
+  thead.appendChild(r2);
+  grid.appendChild(thead);
+
+  // ----- Body -----
+  const tbody = document.createElement("tbody");
+  habits.forEach((h, idx) => {
+    const tr = document.createElement("tr");
+    const count = logs.filter(l => l.habit_id === h.id).length;
+    const streak = longestStreak(h.id, days, y, m);
+
+    const cell = document.createElement("td");
+    cell.className = "habit-cell";
+    cell.innerHTML = `
+      <div class="habit-head">
+        <span class="habit-name"><span class="dot" style="background:${h.color || "#6366f1"}"></span>${escapeHtml(h.name)}</span>
+        <span class="habit-actions">
+          <button class="icon-btn" data-act="up" title="Move up">↑</button>
+          <button class="icon-btn" data-act="down" title="Move down">↓</button>
+          <button class="icon-btn" data-act="edit" title="Rename">✎</button>
+          <button class="icon-btn" data-act="del" title="Delete">🗑</button>
+        </span>
+      </div>
+      <div class="summary">${count}/${days} days${streak >= 2 ? ` · <span class="streak">🔥 ${streak} best streak</span>` : ""}</div>`;
+    cell.querySelector('[data-act=up]').onclick = () => moveHabit(idx, -1);
+    cell.querySelector('[data-act=down]').onclick = () => moveHabit(idx, 1);
+    cell.querySelector('[data-act=edit]').onclick = () => editHabit(h);
+    cell.querySelector('[data-act=del]').onclick = () => deleteHabit(h);
+    tr.appendChild(cell);
+
+    for (let d = 1; d <= days; d++){
+      const dateStr = iso(y, m, d);
+      const done = logs.some(l => l.habit_id === h.id && l.date === dateStr);
+      const today = isCurrentMonth && d === todayD;
+      const td = document.createElement("td");
+      td.className = "cell" + (done ? " done" : "") + (today ? " today" : "");
+      td.innerHTML = `<div class="mark" style="${done ? `background:${h.color || "#6366f1"}` : ""}">${done ? "✓" : ""}</div>`;
+      td.onclick = () => toggleLog(h.id, dateStr);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  grid.appendChild(tbody);
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>\"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+function buildSwatches(){
+  const wrap = $("swatches");
+  wrap.innerHTML = "";
+  COLORS.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch" + (i === 0 ? " sel" : "");
+    b.style.background = c;
+    b.onclick = () => {
+      selectedColor = c;
+      [...wrap.children].forEach(el => el.classList.remove("sel"));
+      b.classList.add("sel");
+    };
+    wrap.appendChild(b);
+  });
+}
+
+$("addForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("habitName").value.trim();
+  if (!name) return;
+  $("habitName").value = "";
+  addHabit(name);
+});
+
+$("prevMonth").addEventListener("click", async () => {
+  view.setMonth(view.getMonth() - 1); await loadLogs(); render();
+});
+$("nextMonth").addEventListener("click", async () => {
+  view.setMonth(view.getMonth() + 1); await loadLogs(); render();
+});
+
+buildSwatches();
+boot();
+</script>
+</body>
+</html>
