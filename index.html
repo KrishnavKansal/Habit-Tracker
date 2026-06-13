@@ -294,24 +294,38 @@ async function doLogout() {
   showScreen('login');
 }
  
-// Safety timeout: if auth hasn't resolved in 5s, force logout
-const authTimeout = setTimeout(async () => {
-  await sb.auth.signOut();
-  showScreen('login');
-}, 5000);
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(async () => {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.user) {
+      currentUser = session.user;
+      document.getElementById('user-email-label').textContent = currentUser.email;
+      showScreen('app');
+      await loadAll();
+    } else {
+      await sb.auth.signOut();
+      showScreen('login');
+    }
+  } catch (e) {
+    await sb.auth.signOut();
+    showScreen('login');
+  }
+})();
 
+// Handle login / logout events after initial boot
 sb.auth.onAuthStateChange(async (event, session) => {
-  clearTimeout(authTimeout);
-  if (session?.user) {
+  if (event === 'SIGNED_IN' && session?.user) {
     currentUser = session.user;
     document.getElementById('user-email-label').textContent = currentUser.email;
     showScreen('app');
     await loadAll();
-  } else {
+  } else if (event === 'SIGNED_OUT') {
     currentUser = null;
-    await sb.auth.signOut(); // Clear any stale tokens
+    habits = []; checks = {};
     showScreen('login');
   }
+});
  
 // ── Boot: listen for auth changes ───────────────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
